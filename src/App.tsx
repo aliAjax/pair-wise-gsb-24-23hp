@@ -1,159 +1,172 @@
+import { useEffect, useReducer } from "react";
 import "./styles.css";
-
-const project = {
-  "id": "hxwl-10",
-  "port": 5110,
-  "title": "考古探方记录",
-  "subtitle": "遗址探方、地层关系与出土物坐标档案",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#854d0e",
-    "#047857",
-    "#475569"
-  ],
-  "domain": "考古发掘",
-  "users": [
-    "发掘队员",
-    "领队",
-    "资料整理员"
-  ],
-  "metrics": [
-    "探方数",
-    "地层数",
-    "出土物",
-    "未整理记录"
-  ],
-  "filters": [
-    "灰坑",
-    "墓葬",
-    "房址",
-    "沟状遗迹"
-  ],
-  "fields": [
-    "遗址",
-    "探方",
-    "地层",
-    "遗迹单位",
-    "深度",
-    "土色",
-    "坐标点",
-    "出土物"
-  ],
-  "records": [
-    [
-      "T0203",
-      "第3层",
-      "灰褐土",
-      "陶片12件，坐标E3N4"
-    ],
-    [
-      "T0204",
-      "H12灰坑",
-      "黑褐土",
-      "夹炭屑，见动物骨"
-    ],
-    [
-      "T0301",
-      "F2房址",
-      "夯土面",
-      "柱洞关系需复核"
-    ]
-  ]
-};
-
-const statusColors = ["status-ok", "status-watch", "status-danger"];
-
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+import {
+  USERS,
+  initState,
+  isVerified,
+  pendingReasons,
+  persistDrafts,
+  persistUnits,
+  reducer,
+} from "./store";
+import ViewCard from "./components/ViewCard";
+import HistoryPanel from "./components/HistoryPanel";
+import CandidatePanel from "./components/CandidatePanel";
+import StatsPanel from "./components/StatsPanel";
 
 function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const [state, dispatch] = useReducer(reducer, undefined, initState);
+
+  useEffect(() => {
+    persistUnits(state.units);
+  }, [state.units]);
+
+  useEffect(() => {
+    persistDrafts(state.drafts);
+  }, [state.drafts]);
+
+  const unit = state.units.find((u) => u.id === state.selectedUnitId) ?? state.units[0];
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">hxwl-10 · 考古发掘</p>
+          <h1>遗迹绘图双视图校核台</h1>
+          <p className="subtitle">
+            每处遗迹单位分别保存平面图与剖面图轮廓及修订记录；一侧改动后另一侧失效待复核，
+            旧线可随时调看。两人同时提交时，后到的只生成候选线，逐点处理差异后才可采纳。
+            复核完成前，该遗迹不计入出土物统计。
+          </p>
         </div>
         <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
+          <span>当前用户（模拟两人协作）</span>
+          <div className="user-switch">
+            {USERS.map((u) => (
+              <button
+                key={u}
+                className={state.currentUser === u ? "active" : ""}
+                onClick={() => dispatch({ type: "SET_USER", user: u })}
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+          <label className="failure-toggle">
+            <input
+              type="checkbox"
+              checked={state.simulateFailure}
+              onChange={() => dispatch({ type: "TOGGLE_FAILURE" })}
+            />
+            模拟保存失败（测试草稿恢复）
+          </label>
         </div>
       </section>
 
-      <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
-        ))}
-      </section>
+      {state.notice && (
+        <div className={`notice notice-${state.notice.kind}`}>
+          <span>{state.notice.text}</span>
+          <button onClick={() => dispatch({ type: "DISMISS_NOTICE" })}>知道了</button>
+        </div>
+      )}
 
-      <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
+      <div className="workbench">
+        <aside className="panel unit-list">
+          <h2>遗迹单位</h2>
+          {state.units.map((u) => {
+            const ok = isVerified(u);
+            return (
+              <button
+                key={u.id}
+                className={`unit-item${u.id === unit?.id ? " active" : ""}`}
+                onClick={() => dispatch({ type: "SELECT_UNIT", unitId: u.id })}
+              >
+                <span className="unit-name">
+                  {u.name}
+                  <span className="unit-sub">
+                    {u.square} · {u.type}
+                  </span>
+                </span>
+                <span className={`badge ${ok ? "badge-ok" : "badge-stale"}`}>
+                  {ok ? "已校核" : "待复核"}
+                </span>
+              </button>
+            );
+          })}
         </aside>
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
+        {unit && (
+          <div className="unit-workspace">
+            <section className="panel unit-head">
               <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
+                <h2>
+                  {unit.name}
+                  <span className="unit-sub">
+                    {unit.square} · {unit.type}
+                  </span>
+                </h2>
+                {!isVerified(unit) && (
+                  <p className="pending-reasons">
+                    {pendingReasons(unit).map((r) => (
+                      <span key={r} className="badge badge-stale">
+                        {r}
+                      </span>
+                    ))}
+                    <em>复核完成前，本单位出土物暂不计入统计。</em>
+                  </p>
+                )}
+                {isVerified(unit) && (
+                  <p className="pending-reasons">
+                    <span className="badge badge-ok">双视图一致，已校核</span>
+                    <em>本单位出土物已计入统计。</em>
+                  </p>
+                )}
               </div>
-            </article>
-          ))}
-        </div>
-      </section>
+            </section>
+
+            <div className="views-grid">
+              <ViewCard
+                unit={unit}
+                view="plan"
+                editing={state.editing}
+                drafts={state.drafts}
+                decisions={state.decisions}
+                currentUser={state.currentUser}
+                historyVersion={state.historyView[`${unit.id}:plan`] ?? null}
+                inspecting={state.inspecting}
+                dispatch={dispatch}
+              />
+              <ViewCard
+                unit={unit}
+                view="section"
+                editing={state.editing}
+                drafts={state.drafts}
+                decisions={state.decisions}
+                currentUser={state.currentUser}
+                historyVersion={state.historyView[`${unit.id}:section`] ?? null}
+                inspecting={state.inspecting}
+                dispatch={dispatch}
+              />
+            </div>
+
+            <div className="bottom-grid">
+              <HistoryPanel
+                unit={unit}
+                historyView={state.historyView}
+                dispatch={dispatch}
+              />
+              <CandidatePanel
+                unit={unit}
+                decisions={state.decisions}
+                inspecting={state.inspecting}
+                dispatch={dispatch}
+              />
+            </div>
+
+            <StatsPanel units={state.units} />
+          </div>
+        )}
+      </div>
     </main>
   );
 }
